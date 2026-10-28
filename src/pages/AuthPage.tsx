@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
-import { supabase } from '../lib/supabase';
-import { FolderSearch , ChevronLeft } from 'lucide-react';
+import { login, register, setCurrentUser } from '../lib/api';
+import { FolderSearch } from 'lucide-react';
 
-type AuthMode = 'login' | 'signup' | 'forgot';
+type AuthMode = 'login' | 'signup';
 
 export default function AuthPage() {
   const [mode, setMode] = useState<AuthMode>('login');
@@ -21,18 +21,14 @@ export default function AuthPage() {
 
     try {
       if (mode === 'login') {
-        const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
-        if (authError) throw authError;
+        const data = await login(email, password);
+        setCurrentUser(data.user);
+        // Reload to trigger auth context update
+        window.location.reload();
       } else if (mode === 'signup') {
-        const { error: authError } = await supabase.auth.signUp({ email, password });
-        if (authError) throw authError;
-        setMessage('Check your email to confirm your account.');
-      } else if (mode === 'forgot') {
-        const { error: authError } = await supabase.auth.resetPasswordForEmail(email, {
-          redirectTo: `${window.location.origin}/auth?mode=reset`,
-        });
-        if (authError) throw authError;
-        setMessage('Password reset link sent to your email.');
+        const data = await register(email, password);
+        setCurrentUser(data.user);
+        window.location.reload();
       }
     } catch (err: any) {
       setError(err.message || 'An error occurred during authentication');
@@ -72,45 +68,19 @@ export default function AuthPage() {
           <p style={{ color: '#6c757d' }}>Physical File Tracker</p>
         </div>
 
-        {mode === 'forgot' ? (
-          <div style={{ marginBottom: '1.5rem' }}>
-            <button 
-              onClick={() => handleModeChange('login')}
-              style={{ 
-                display: 'flex', 
-                alignItems: 'center', 
-                gap: '0.25rem', 
-                background: 'none', 
-                border: 'none', 
-                color: '#4a6fa5', 
-                cursor: 'pointer', 
-                padding: 0,
-                fontSize: '0.9rem',
-                fontWeight: 600
-              }}
-            >
-              <ChevronLeft style={{ width: 16, height: 16 }} /> Back to Log In
+        <div style={{ display: 'flex', marginBottom: '1.5rem', borderRadius: '0.4rem', overflow: 'hidden', border: '1px solid #dee2e6' }}>
+          {(['login', 'signup'] as const).map(m => (
+            <button key={m} onClick={() => handleModeChange(m)}
+              style={{
+                flex: 1, padding: '0.6rem', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '0.95rem',
+                background: mode === m ? '#4a6fa5' : 'white',
+                color: mode === m ? 'white' : '#495057',
+                transition: 'all 0.2s',
+              }}>
+              {m === 'login' ? 'Log In' : 'Sign Up'}
             </button>
-            <h2 style={{ marginTop: '1rem', fontSize: '1.25rem', fontWeight: 700, color: '#343a40' }}>Reset Password</h2>
-            <p style={{ fontSize: '0.9rem', color: '#6c757d', marginTop: '0.5rem' }}>
-              Enter your email address and we'll send you a link to reset your password.
-            </p>
-          </div>
-        ) : (
-          <div style={{ display: 'flex', marginBottom: '1.5rem', borderRadius: '0.4rem', overflow: 'hidden', border: '1px solid #dee2e6' }}>
-            {(['login', 'signup'] as const).map(m => (
-              <button key={m} onClick={() => handleModeChange(m)}
-                style={{
-                  flex: 1, padding: '0.6rem', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '0.95rem',
-                  background: mode === m ? '#4a6fa5' : 'white',
-                  color: mode === m ? 'white' : '#495057',
-                  transition: 'all 0.2s',
-                }}>
-                {m === 'login' ? 'Log In' : 'Sign Up'}
-              </button>
-            ))}
-          </div>
-        )}
+          ))}
+        </div>
 
         <form onSubmit={handleSubmit}>
           <div style={{ marginBottom: '1rem' }}>
@@ -121,26 +91,13 @@ export default function AuthPage() {
             />
           </div>
           
-          {mode !== 'forgot' && (
-            <div style={{ marginBottom: '0.5rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
-                <label style={{ fontWeight: 600, fontSize: '0.9rem' }}>Password</label>
-                {mode === 'login' && (
-                  <button 
-                    type="button"
-                    onClick={() => handleModeChange('forgot')}
-                    style={{ background: 'none', border: 'none', color: '#4a6fa5', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600, padding: 0 }}
-                  >
-                    Forgot password?
-                  </button>
-                )}
-              </div>
-              <input type="password" value={password} onChange={e => setPassword(e.target.value)} required minLength={6}
-                style={{ width: '100%', padding: '0.75rem', border: '1px solid #dee2e6', borderRadius: '0.4rem', fontSize: '1rem', boxSizing: 'border-box' }}
-                placeholder="••••••••"
-              />
-            </div>
-          )}
+          <div style={{ marginBottom: '0.5rem' }}>
+            <label style={{ fontWeight: 600, fontSize: '0.9rem', marginBottom: '0.4rem', display: 'block' }}>Password</label>
+            <input type="password" value={password} onChange={e => setPassword(e.target.value)} required minLength={6}
+              style={{ width: '100%', padding: '0.75rem', border: '1px solid #dee2e6', borderRadius: '0.4rem', fontSize: '1rem', boxSizing: 'border-box' }}
+              placeholder="••••••••"
+            />
+          </div>
 
           <div style={{ height: '1.5rem', marginBottom: '1rem' }}>
             {error && <p style={{ color: '#dc3545', fontSize: '0.85rem', margin: 0 }}>{error}</p>}
@@ -162,7 +119,7 @@ export default function AuthPage() {
               boxShadow: '0 2px 4px rgba(74, 111, 165, 0.3)',
               transition: 'all 0.2s'
             }}>
-            {loading ? 'Please wait...' : mode === 'login' ? 'Log In' : mode === 'signup' ? 'Create Account' : 'Send Reset Link'}
+            {loading ? 'Please wait...' : mode === 'login' ? 'Log In' : 'Create Account'}
           </button>
         </form>
       </div>

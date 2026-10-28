@@ -1,10 +1,9 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
-import type { User } from '@supabase/supabase-js';
-import { supabase } from '../lib/supabase';
+import { getCurrentUser, logout, getToken, type ApiUser } from '../lib/api';
 
 interface AuthContextValue {
-  user: User | null;
+  user: ApiUser | null;
   loading: boolean;
   signOut: () => void;
 }
@@ -16,23 +15,36 @@ interface AuthProviderProps {
 }
 
 export function AuthProvider({ children }: AuthProviderProps) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<ApiUser | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
+    // Check if there's a valid token on mount
+    const token = getToken();
+    if (!token) {
+      setUser(null);
       setLoading(false);
-    });
+      return;
+    }
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-    });
-
-    return () => subscription.unsubscribe();
+    // Validate token by trying to fetch current user
+    getCurrentUser()
+      .then((currentUser) => {
+        setUser(currentUser);
+      })
+      .catch(() => {
+        logout();
+        setUser(null);
+      })
+      .finally(() => {
+        setLoading(false);
+      });
   }, []);
 
-  const signOut = () => { void supabase.auth.signOut(); };
+  const signOut = () => {
+    logout();
+    setUser(null);
+  };
 
   return (
     <AuthContext.Provider value={{ user, loading, signOut }}>

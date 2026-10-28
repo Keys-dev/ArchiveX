@@ -1,14 +1,29 @@
 import { useState, useEffect, useMemo } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { FolderSearch, LogOut } from 'lucide-react';
-import { supabase } from './lib/supabase';
 import { useAuth } from './context/AuthContext';
+import { getItems, createItem, updateItem, deleteItem, type ApiItem } from './lib/api';
 import AuthPage from './pages/AuthPage';
 import FileCard from './components/FileCard';
 import FileForm from './components/FileForm';
 import SearchFilter from './components/SearchFilter';
 import type { FileItem, Filters, SearchType, SortOption } from './types';
 import './App.css';
+
+// Convert API item to FileItem type used by components
+function apiToFileItem(item: ApiItem): FileItem {
+  // Extract just the date part from ISO timestamp for the date picker
+  const dateStr = item.dateAdded.split('T')[0];
+  return {
+    id: item.id,
+    type: item.type as FileItem['type'],
+    name: item.name,
+    location: item.location,
+    category: (item.category as FileItem['category']) || '',
+    notes: item.notes || '',
+    dateAdded: dateStr,
+  };
+}
 
 function App() {
   const { user, loading, signOut } = useAuth();
@@ -20,18 +35,16 @@ function App() {
   const [sort, setSort] = useState<SortOption>('dateAdded-desc');
   const [editingItem, setEditingItem] = useState<FileItem | null>(null);
 
-  // Fetch items from Supabase whenever the user changes
+  // Fetch items from API whenever the user changes
   useEffect(() => {
     if (!user) return;
 
     const fetchItems = async () => {
-      const { data, error } = await supabase
-        .from('items')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (!error && data) {
-        setItems(data.map(i => ({ ...i, dateAdded: i.date_added as string })));
+      try {
+        const data = await getItems();
+        setItems(data.map(apiToFileItem));
+      } catch (err) {
+        console.error('Failed to fetch items:', err);
       }
     };
 
@@ -87,49 +100,48 @@ function App() {
 
   // Handlers
   const handleAddItem = async (newItem: FileItem) => {
-    const { data, error } = await supabase
-      .from('items')
-      .insert([{
+    try {
+      const created = await createItem({
         name: newItem.name,
         type: newItem.type,
         location: newItem.location,
-        category: newItem.category,
-        notes: newItem.notes,
-        date_added: newItem.dateAdded,
-        user_id: user.id,
-      }])
-      .select()
-      .single();
-
-    if (!error && data) {
-      setItems(prev => [{ ...data as FileItem, dateAdded: (data as Record<string, string>).date_added }, ...prev]);
+        category: newItem.category || undefined,
+        notes: newItem.notes || undefined,
+        dateAdded: newItem.dateAdded ? new Date(newItem.dateAdded).toISOString() : undefined,
+      });
+      setItems(prev => [apiToFileItem(created), ...prev]);
+    } catch (err) {
+      console.error('Failed to add item:', err);
+      alert('Failed to add item. Please try again.');
     }
   };
 
   const handleUpdateItem = async (updatedItem: FileItem) => {
-    const { error } = await supabase
-      .from('items')
-      .update({
+    try {
+      const updated = await updateItem(updatedItem.id, {
         name: updatedItem.name,
         type: updatedItem.type,
         location: updatedItem.location,
-        category: updatedItem.category,
-        notes: updatedItem.notes,
-        date_added: updatedItem.dateAdded,
-      })
-      .eq('id', updatedItem.id);
-
-    if (!error) {
-      setItems(prev => prev.map(item => item.id === updatedItem.id ? updatedItem : item));
+        category: updatedItem.category || undefined,
+        notes: updatedItem.notes || undefined,
+        dateAdded: updatedItem.dateAdded ? new Date(updatedItem.dateAdded).toISOString() : undefined,
+      });
+      setItems(prev => prev.map(item => item.id === updatedItem.id ? apiToFileItem(updated) : item));
+    } catch (err) {
+      console.error('Failed to update item:', err);
+      alert('Failed to update item. Please try again.');
     }
     setEditingItem(null);
   };
 
   const handleDeleteItem = async (id: string) => {
     if (window.confirm('Are you sure you want to delete this item?')) {
-      const { error } = await supabase.from('items').delete().eq('id', id);
-      if (!error) {
+      try {
+        await deleteItem(id);
         setItems(prev => prev.filter(item => item.id !== id));
+      } catch (err) {
+        console.error('Failed to delete item:', err);
+        alert('Failed to delete item. Please try again.');
       }
     }
   };
